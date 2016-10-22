@@ -3,13 +3,15 @@ Word Sudoku with decoy words
 Author: Litian Ma
 '''
 
-'''
 import copy
 import time
 
-letterfrequency = {}
-for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-    letterfrequency[ch] = 0
+
+class Grid:
+    def __init__(self, word, pos):
+        self.word = word
+        self.pos = pos
+
 
 class Placement:
     def __init__(self, direction, coordinate, word):
@@ -19,33 +21,20 @@ class Placement:
         self.word_len = len(word)
 
 
-class Assignment:
-    def __init__(self, sudokumatrix):
-        self.sudokumatrix = sudokumatrix
-        self.frequency = letterfrequency
-        for i in sudokumatrix:
-            for j in i:
-                if j != '_':
-                    self.frequency[j] += 1
-
-
 # AFTER CHECK. assign command into sudoku, and return a new sudoku
 def place_word(sudoku_matrix, placement):
-    already_exist = 1
     if placement.direction == 'V':
         for n in range(placement.word_len):
             if sudoku_matrix[placement.coordinate[0] + n][placement.coordinate[1]] != placement.word[n]:
                 sudoku_matrix[placement.coordinate[0] + n][placement.coordinate[1]] = placement.word[n]
-                already_exist = 0
     elif placement.direction == 'H':
         for n in range(placement.word_len):
             if sudoku_matrix[placement.coordinate[0]][placement.coordinate[1] + n] != placement.word[n]:
                 sudoku_matrix[placement.coordinate[0]][placement.coordinate[1] + n] = placement.word[n]
-                already_exist = 0
     # do not select this word
     elif placement.direction == 'N':
         pass
-    return sudoku_matrix, already_exist
+    return sudoku_matrix
 
 
 def is_complete(sudoku_matrix):
@@ -55,10 +44,24 @@ def is_complete(sudoku_matrix):
     return True
 
 
+def exist_in_matrix(sudoku, placement):
+    if placement.direction == 'V':
+        for n in range(placement.word_len):
+            if sudoku[placement.coordinate[0] + n][placement.coordinate[1]] != placement.word[n]:
+                return False
+    elif placement.direction == 'H':
+        for n in range(placement.word_len):
+            if sudoku[placement.coordinate[0]][placement.coordinate[1] + n] != placement.word[n]:
+                return False
+    return True
+
+
 class WordSudokuSlover:
     direction = ['V', 'H']
 
     def __init__(self, gridfile, wordbank):
+        self.solution = []
+
         self.sudoku_matrix = []
         self.wordbank = []
         self.trackingpath = []
@@ -102,31 +105,35 @@ class WordSudokuSlover:
             return False
 
     def recursive_search(self, assignment, wordbank):
-        if is_complete(assignment.sudokumatrix):
-            return assignment.sudokumatrix
+
+        if is_complete(assignment):
+            return assignment
         if len(wordbank) == 0:
             return False
         word = self.selectWord(assignment, wordbank)
 
-        for placement in self.domainValues(word, assignment.sudokumatrix):
-            new_assignment = copy.deepcopy(assignment.sudokumatrix)
+        for placement in self.domainValues(word, assignment):
+            new_assignment = copy.deepcopy(assignment)
             new_wordbank = copy.deepcopy(wordbank)
             new_wordbank.remove(word)
-            new_assignment, already_exist = place_word(new_assignment, placement)
-            if already_exist == 0:
-                self.trackingpath.append(placement)
-            else:
-                placement.direction = 'A'
-                self.trackingpath.append(placement)
+            new_assignment= place_word(new_assignment, placement)
+            self.trackingpath.append(placement)
             self.nodenum += 1
-            result = self.recursive_search(Assignment(new_assignment), new_wordbank)
+            print("Node:", self.nodenum)
+            result = self.recursive_search(new_assignment, new_wordbank)
             if result:
                 return result
             self.trackingpath.remove(placement)
         return False
 
     def selectWord(self, assignment, wordbank):
-        dictionary = assignment.frequency
+        dictionary = {}
+        for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            dictionary[ch] = 0
+        for i in assignment:
+            for j in i:
+                if j != '_':
+                    dictionary[j] += 1
         maxweight = 0
         returnword = ''
         for word in wordbank:
@@ -157,6 +164,7 @@ class WordSudokuSlover:
         direction = 'N'
         placement = Placement(direction, (0, 0), word)
         placements.append(placement)
+        a = [(p.direction, p.coordinate, p.word) for p in placements]
         return placements
 
     # given placement find maximum number of existing character in the assign
@@ -178,7 +186,7 @@ class WordSudokuSlover:
 
     def solve(self, solution, sequence):
         t0 = time.clock()
-        res = self.recursive_search(Assignment(self.sudoku_matrix), self.wordbank)
+        res = self.recursive_search(self.sudoku_matrix, self.wordbank)
         print(time.clock() - t0, "sec")
         print(self.nodenum, "nodes")
         if res == 0:
@@ -188,13 +196,73 @@ class WordSudokuSlover:
             with open(solution, 'wt') as file:
                 for row in res:
                     print(''.join(row), file=file)
+
+            sudoku = [['_' for _ in range(9)] for _ in range(9)]
+            fillingword = self.fillsudoku(self.trackingpath)
+            coveredwords = []
             with open(sequence, 'wt') as file:
                 for placement in self.trackingpath:
-                    if placement.direction != 'N' and placement.direction != 'A':
+                    if placement.direction == 'N':
+                        print('(N/A)' + ': ' + placement.word, file=file)
+                    elif placement.word in fillingword:
                         print(placement.direction + "," +
                               str(placement.coordinate[0]) + "," +
                               str(placement.coordinate[1]) + ": " +
                               placement.word, file=file)
+                        sudoku = place_word(sudoku, placement)
+                    else:
+                        coveredwords.append(placement)
+                coveredwords.sort(key=lambda p: self.count_char_exist(p, sudoku))
+                for placement in coveredwords:
+                    if exist_in_matrix(sudoku, placement):
+                        print('(N/A)' + ': ' + placement.word, file=file)
+                    else:
+                        print(placement.direction + "," +
+                              str(placement.coordinate[0]) + "," +
+                              str(placement.coordinate[1]) + ": " +
+                              placement.word, file=file)
+                        sudoku = place_word(sudoku, placement)
+
+    def fillsudoku(self, sequence):
+        sudoku = [[[] for _ in range(9)] for _ in range(9)]
+        word_count_dict = {}
+        res = []
+        for placement in sequence:
+            if placement.direction == 'N':
+                continue
+            if placement.word not in word_count_dict:
+                word_count_dict[placement.word] = 0
+            if placement.direction == 'V':
+                for n in range(placement.word_len):
+                    place = sudoku[placement.coordinate[0] + n][placement.coordinate[1]]
+                    if len(place) == 0:
+                        sudoku[placement.coordinate[0] + n][placement.coordinate[1]].append(Grid(placement.word, n))
+                        continue
+                    else:
+
+                        word_count_dict[placement.word] ^= (1 << (len(placement.word) - n - 1))
+                        for grid in place:
+                            word_count_dict[grid.word] ^= (1 << (len(grid.word) - grid.pos - 1))
+                        sudoku[placement.coordinate[0] + n][placement.coordinate[1]].append(Grid(placement.word, n))
+
+            elif placement.direction == 'H':
+                for n in range(placement.word_len):
+                    place = sudoku[placement.coordinate[0]][placement.coordinate[1] + n]
+                    if len(place) == 0:
+                        sudoku[placement.coordinate[0]][placement.coordinate[1] + n].append(Grid(placement.word, n))
+                        continue
+                    else:
+                        word_count_dict[placement.word] ^= (1 << (len(placement.word) - n - 1))
+                        for grid in place:
+                            word_count_dict[grid.word] ^= (1 << (len(grid.word) - grid.pos - 1))
+                        sudoku[placement.coordinate[0]][placement.coordinate[1] + n].append(Grid(placement.word, n))
+        for d in word_count_dict:
+            if word_count_dict[d] == 2 ** len(d) - 1:
+                continue
+            res.append(d)
+        return res
+
+
 
 
 def main():
@@ -203,5 +271,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-'''
