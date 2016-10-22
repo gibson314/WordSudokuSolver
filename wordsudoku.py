@@ -1,9 +1,10 @@
 '''
-Wordsudoku of decoy word
+Normal Wordsudoku
 Author: Litian Ma
 '''
 
 import copy
+import time
 
 
 class Placement:
@@ -39,6 +40,7 @@ class WordSudokuSlover:
         self.sudoku_matrix = []
         self.wordbank = []
         self.trackingpath = []
+        self.nodenum = 0
         with open(gridfile, 'rt') as grid:
             for line in grid:
                 self.sudoku_matrix.append(list(line.strip('\n')))
@@ -83,13 +85,12 @@ class WordSudokuSlover:
         word = self.selectWord(assignment, wordbank)
 
         for placement in self.domainValues(word, assignment):
-
-            # if self.checkContraint(assignment, placement):
             new_assignment = copy.deepcopy(assignment)
             new_wordbank = copy.deepcopy(wordbank)
             new_wordbank.remove(word)
             new_assignment = place_word(new_assignment, placement)
             self.trackingpath.append(placement)
+            self.nodenum += 1
             result = self.recursive_search(new_assignment, new_wordbank)
             if result:
                 return result
@@ -97,12 +98,22 @@ class WordSudokuSlover:
         return False
 
     def selectWord(self, assignment, wordbank):
-        maxlen = 0
+        dictionary = {}
+        for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            dictionary[ch] = 0
+        for i in assignment:
+            for j in i:
+                if j != '_':
+                    dictionary[j] += 1
+        maxweight = 0
         returnword = ''
         for word in wordbank:
-            if len(word) > maxlen:
+            weight = 0
+            for ch in word:
+                weight += dictionary[ch]
+            if len(word) > len(returnword) or (len(word) == len(returnword) and weight > maxweight):
                 returnword = word
-                maxlen = len(word)
+                maxweight = weight
         return returnword
 
     def domainValues(self, word, assignment):
@@ -141,7 +152,10 @@ class WordSudokuSlover:
         return count
 
     def solve(self, solution, sequence):
+        t0 = time.clock()
         res = self.recursive_search(self.sudoku_matrix, self.wordbank)
+        print(time.clock() - t0, "sec")
+        print(self.nodenum, "nodes")
         if res == 0:
             print("No Solutions for given Word Sudoku!")
         else:
