@@ -150,7 +150,6 @@ class WordSudokuSlover:
         direction = 'N'
         placement = Placement(direction, (0, 0), word)
         placements.append(placement)
-        a = [(p.direction, p.coordinate, p.word) for p in placements]
         return placements
 
     # given placement find maximum number of existing character in the assign
